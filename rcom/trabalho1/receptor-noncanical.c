@@ -35,11 +35,15 @@
  *****************************/
 
 
-char decodeTrama(char* a);
+char decodeTramaControlo(char* a);
 void enviarTrama(int fd, char a, char c);
 void iniCon(int fd);
 void semResposta(void);
 int esperarTrama(int fd, char a, char c);
+void disconnect(int fd);
+char* encodeTrama(char* str, int len, int indT, char a);
+char* decodeTrama(char* str, int len);
+
 
 volatile int STOP=FALSE; 
 int timeout;
@@ -225,7 +229,7 @@ void iniCon(int fd){
 }
 
 
-char decodeTrama(char* a){
+char decodeTramaControlo(char* a){
     
 
 
@@ -245,4 +249,76 @@ void enviarTrama(int fd, char a, char c){
     buf[4] = F;
    
     write(fd, buf, 5);
+}
+
+char* encodeTrama(char* str, int len, int indT, char a){
+
+   char c;
+   char bcc1;
+   char bcc2;
+   char *tudo;
+   int j = 4;
+ 
+   
+   if(indT == 0)
+         c=0;
+   else
+        c=2;     
+    
+   bcc1 = c^a;
+    bcc2 = str[0];
+   for(int i = 1; i<len; i++){
+        bcc2 = bcc2^str[i];      
+    }
+   
+    tudo = (char*) malloc (6+len);
+    
+    tudo[0] = F;
+    tudo[1] = a;
+    tudo[2]= c;
+    tudo[3] = bcc1;
+    
+    for(int i = 0; i<len;i++,j++){
+        tudo[j] = str[i];
+    }
+    tudo[j++]=bcc2;
+    tudo[j++]=F;
+       
+    
+   return tudo; 
+  
+}
+
+char* decodeTrama(char* str, int len){
+
+  char bcc1, bcc2;
+  char* outravez;
+  if(str[0]!=F || (str[1] != A_EMISSOR && str[1] != A_RECETOR) ){
+        return NULL;
+        
+  } else 
+  if(str[2]!= 0 && str[2]!= 2) 
+        return NULL;
+                
+  else   
+  if(str[1]^str[0] != str[3]) //bcc1
+        return NULL;
+        
+  bcc2 = str[4];
+  
+  for(int i = 5; i< len-6;i++)
+      bcc2 ^= str[i];  
+  if(bcc2 != str[len-2]) //TESTAR
+        return NULL;
+        
+  else if(str[len-1] != F)
+        return NULL;
+        
+
+   outravez = (char*) malloc (len-6);  
+   
+   for(int i = 4; i<len-2; i++)
+        outravez[i-4] = str[i];
+   
+   return outravez;   
 }

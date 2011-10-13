@@ -45,6 +45,9 @@ void enviarTrama(int fd, char a, char c);
 void iniCon(int fd);
 void semResposta(void);
 int esperarTrama(int fd, char a, char c);
+void disconnect(int fd);
+char* encodeTrama(char* str, int len, int indT, char a);
+char* decodeTrama(char* str, int len);
 
 int timeout;
 
@@ -119,29 +122,21 @@ int main(int argc, char** argv)
   
     while (STOP==FALSE) {       /* loop for input */
       res = read(fd,buf,1);   /* returns after 1 chars have been input */
-      if(res > 0)
+      if(res > 0){
               buf[res]=0;               /* so we can printf... */
               printf(":%s:\n", buf);
               if (buf[0]=='\0') STOP=TRUE;
+	 }i
     }
 
-
-  /* 
-    O ciclo FOR e as instru��es seguintes devem ser alterados de modo a respeitar 
-    o indicado no gui�o 
-  */
-
-
+    disconnect(fd);
    
     if ( tcsetattr(fd,TCSANOW,&oldtio) == -1) {
       perror("tcsetattr");
       exit(-1);
     }
-    
-    
 
-
-
+	
 
     close(fd);
     return 0;
@@ -158,8 +153,9 @@ void disconnect(int fd){
 	while(ntries){
 		enviarTrama(fd, A_EMISSOR, C_DISC);
 
-		if(esperarTrama(fd, A_EMISSOR, C_DISC)==-1)
+		if(esperarTrama(fd, A_RECETOR, C_DISC)==-1)
 			printf("Timeout: %d\n", ntries--); 
+		else break;
 	}
 	if(!ntries)
 		printf("Erro na disconeccao: TIMEOUT\n");
@@ -194,20 +190,20 @@ int esperarTrama(int fd, char a, char c){
 	while ( (indTrama!=5) && (timeout == 0) ){       
 	
 	    res = read(fd,buff,1);
-	    //printf(":%x:", buf[0]);
-	    if( res>0)
+
+	    if( res>0){	    printf(":%x:", buff[0]);
 	            //verifica se estamos a receber a trama na ordem correcta
 	            if(buff[0] == rightTrama[indTrama])
-	                    indTrama++;
+	                    printf("\n%d\n" ,indTrama++ +1);
 	            else 
 	                if(buff[0] == rightTrama[0])
 	                        indTrama = 1;
 	                else indTrama = 0;
 
-
+}
        }
 
-       if(timeout)
+       if(timeout!=0)
             return -1;
        else{
             //cancela o alarm
@@ -223,7 +219,8 @@ void iniCon(int fd){
         enviarTrama(fd,A_EMISSOR,C_SET); //envia pedido de coneccao
         
 	if(esperarTrama(fd, A_EMISSOR, C_UA)==-1)
-		printf("Timeout: %d\n", ntries--); 
+		printf("Timeout: %d\n", ntries--);
+	else break;
    }
    if(!ntries)
         printf("Erro na coneccao: TIMEOUT\n");
@@ -252,4 +249,75 @@ void enviarTrama(int fd, char a, char c){
     buf[4] = F;
    
     write(fd, buf, 5);
+}
+char* encodeTrama(char* str, int len, int indT, char a){
+
+   char c;
+   char bcc1;
+   char bcc2;
+   char *tudo;
+   int j = 4;
+ 
+   
+   if(indT == 0)
+         c=0;
+   else
+        c=2;     
+    
+   bcc1 = c^a;
+    bcc2 = str[0];
+   for(int i = 1; i<len; i++){
+        bcc2 = bcc2^str[i];      
+    }
+   
+    tudo = (char*) malloc (6+len);
+    
+    tudo[0] = F;
+    tudo[1] = a;
+    tudo[2]= c;
+    tudo[3] = bcc1;
+    
+    for(int i = 0; i<len;i++,j++){
+        tudo[j] = str[i];
+    }
+    tudo[j++]=bcc2;
+    tudo[j++]=F;
+       
+    
+   return tudo; 
+  
+}
+
+char* decodeTrama(char* str, int len){
+
+  char bcc1, bcc2;
+  char* outravez;
+  if(str[0]!=F || (str[1] != A_EMISSOR && str[1] != A_RECETOR) ){
+        return NULL;
+        
+  } else 
+  if(str[2]!= 0 && str[2]!= 2) 
+        return NULL;
+                
+  else   
+  if(str[1]^str[0] != str[3]) //bcc1
+        return NULL;
+        
+  bcc2 = str[4];
+  
+  for(int i = 5; i< len-6;i++)
+      bcc2 ^= str[i];  
+  if(bcc2 != str[len-2]) //TESTAR
+        return NULL;
+        
+  else if(str[len-1] != F)
+        return NULL;
+        
+
+   outravez = (char*) malloc (len-6);  
+   
+   for(int i = 4; i<len-2; i++)
+        outravez[i-4] = str[i];
+   
+   return outravez;   
 }
