@@ -33,12 +33,19 @@ int getArgs(char* arg);
 int main(int argc, char *argv[] ){
 
 	int sock,lsock;
+	char buff[256];
 
-	if( argc >= 2)
+	if( argc >= 2){
 		if(getArgs(argv[1])<0){
 			printf("usage: %s ftp://[<user>:<password>@]<host>/<url-path>\n", argv[0]);
 			return 0;
 		}
+	}
+	else {
+		printf("usage: %s ftp://[<user>:<password>@]<host>/<url-path>\n", argv[0]);
+		return 0;
+	
+	}
 
 	//init default Con vars
 	Con.porta = 21;
@@ -55,9 +62,9 @@ int main(int argc, char *argv[] ){
 
 	sock = new_con(Con.ip,21);
 
+	while(recv(sock,buff,255,0)==-1);
 
-
-	printf("parse feito, falta fazer o parse da connecção.\nsock=%d\n",sock);
+	printf("parse feito, falta fazer o parse da connecção.\nsock=%d\nreceived=%s\n",sock,buff);
 
 	close(sock);
 	return 0;
@@ -115,9 +122,6 @@ struct hostent {
             return NULL;
         }
 
-        printf("Host name  : %s\n", h->h_name);
-        printf("IP Address : %s\n",inet_ntoa(*((struct in_addr *)h->h_addr)));
-
         return inet_ntoa(*((struct in_addr *)h->h_addr));
 
 }
@@ -153,12 +157,12 @@ int getArgs(char* arg){
 	regex[4] = (char*)calloc(104, sizeof(char));
 	regex[5] = (char*)calloc(34, sizeof(char));
 
-	regex[0] = "^ftp://";
-	regex[1] = "/[a-zA-Z0-9]{1,12}:";
-	regex[2] = ":[a-zA-Z0-9]{1,12}@";
-	regex[3] = "(([a-zA-Z]|[a-zA-Z][a-zA-Z0-9\\-]*[a-zA-Z0-9])\\.)*([A-Za-z]|[A-Za-z][A-Za-z0-9\\-]*[A-Za-z0-9])/";
-	regex[4] = "(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])";
-	regex[5] = "(/[a-zA-Z0-9\\-]+)+\\.[a-zA-Z0-9]+$";
+	strcpy(regex[0],"^ftp://");
+	strcpy(regex[1],"/[a-zA-Z0-9]{1,12}:");
+	strcpy(regex[2],":[a-zA-Z0-9]{1,12}@");
+	strcpy(regex[3],"(([a-zA-Z]|[a-zA-Z][a-zA-Z0-9\\-]*[a-zA-Z0-9])\\.)*([A-Za-z]|[A-Za-z][A-Za-z0-9\\-]*[A-Za-z0-9])/");
+	strcpy(regex[4],"(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])");
+	strcpy(regex[5],"(/[a-zA-Z0-9\\-]+)+\\.[a-zA-Z0-9]+$");
 
 	match = (char*)calloc(6,sizeof(char*));
 //	printf("\nmatch = %d\n",match);
@@ -166,14 +170,13 @@ int getArgs(char* arg){
 
 //	printf("\n\n\n");
 	while(i--){
-//		 printf("regex[%d] = %s;\n",5-i,regex[5-i]);
 		 if((status = regcomp( &re, regex[5-i], REG_EXTENDED))!= 0){
 			 regerror(status, &re, buf, 120);
 			 return -1;
 		 }
 		 ps = arg;
 		 eflag = 0;
-
+		 
 		 if( status = regexec( &re, ps, 1, pmatch, eflag)== 0){
 			 offset = pmatch[0].rm_eo-pmatch[0].rm_so;
 
@@ -211,20 +214,20 @@ int getArgs(char* arg){
 		//match[4]-> null => uso-o como uma var temp para obter o ip do hostname
 		match[4] = getIP(temp);
 		strncpy(Con.ip, match[4], strlen(match[4]));
+		match[4] = 0;
 	} else{
 		Con.ip = (char*)calloc(4*3+3, sizeof(char));
 		strncpy(Con.ip, match[4], strlen(match[4]));
 	}
 
 
-    i=-1;
-
+    i=6;
     //limpar apontadores
-//    while(i++<6){
-//    	free(regex[i]);
-//    	if(match[i]!=0)
-//    		free(match[i]);
-//    }
+    while(--i){
+    	free(regex[i]);
+    	if(match[i]!=0)
+    		free(match[i]);   
+    }
 
     free(regex);
     free(match);
