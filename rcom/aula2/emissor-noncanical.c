@@ -6,6 +6,7 @@
 #include <termios.h>
 #include <stdio.h>
 #include <signal.h>
+#include <strings.h>
 
 #define BAUDRATE B38400
 #define MODEMDEVICE "/dev/ttyS1"
@@ -13,9 +14,9 @@
 #define FALSE 0
 #define TRUE 1
 
-#define F 0x72
-#define A_SEND 0x03
-#define A_RESP 0x01
+#define F 0x7e
+#define A_EMISSOR 0x03
+#define A_RECETOR 0x01
 
 #define C_SET 0x03
 #define C_UA 0x07
@@ -41,7 +42,7 @@ volatile int STOP=FALSE;
 
 char decodeTrama(char* a);
 void enviarTrama(int fd, char a, char c);
-void iniCon(int fd)
+void iniCon(int fd);
 void semResposta(void);
 
 int timeout;
@@ -83,8 +84,8 @@ int main(int argc, char** argv)
     /* set input mode (non-canonical, no echo,...) */
     newtio.c_lflag = 0;
 
-    newtio.c_cc[VTIME]    = 0;   /* inter-character timer unused */
-    newtio.c_cc[VMIN]     = 1;   /* blocking read until 1 chars received */
+    newtio.c_cc[VTIME]    = 1;   /* inter-character timer unused */
+    newtio.c_cc[VMIN]     = 0;   /* blocking read until 1 chars received */
 
 
 
@@ -108,11 +109,19 @@ int main(int argc, char** argv)
     //inicia coneccao (Com  3 timeouts de 3s)
     iniCon(fd);
   
-	while (STOP==FALSE) {       /* loop for input */
+    gets (buf);
+    
+    tamanho=strlen(buf);
+    buf[tamanho++]='\0';
+    res = write(fd,buf,tamanho);   
+    printf("%d bytes written\n", res);
+  
+    while (STOP==FALSE) {       /* loop for input */
       res = read(fd,buf,1);   /* returns after 1 chars have been input */
-      buf[res]=0;               /* so we can printf... */
-      printf(":%s:%d\n", buf, res);
-      if (buf[0]=='\0') STOP=TRUE;
+      if(res > 0)
+              buf[res]=0;               /* so we can printf... */
+              printf(":%s:\n", buf);
+              if (buf[0]=='\0') STOP=TRUE;
     }
 
 
@@ -142,52 +151,80 @@ void semResposta(void){
     printf("TIMEOUT\n");
     }
 
-void iniCon(int fd){
-    char buff[255]:
-    int res;
-    char trama[5];
-    char rightTrama[5];
-    int indTrama = 0;
-    int ntries = 4;
-    
-    //trama que correcta de resposta do receptor
-    rightTrama[0] = F
-    rightTrama[1] = A_EMISSOR;
-    rightTrama[2] = C_UA;
-    rightTrama[3] = A_EMISSOR ^ C_SET;
-    rightTrama[4] = F;
-    
- // instala  funcao que atende interrupcao para timeout
-    (void) signal(SIGALRM, semResposta);  
+void disconnect(int fd){
+	int ntries = 3;
 
-     
-    while(ntries){
-        timeout = 0;
-        enviarTrama(fd,A_SEND,C_SET); //envia pedido de coneccao
-        alarm(3);   //poe o alarm a activar dentro de 3 segundos
+	while(ntries){
+		enviarTrama(fd, A_EMISSOR, C_DISC);
+
+		if(esperarTrama(fd, A_EMISSOR, C_DISC)==-1)
+			printf("Timeout: %d\n", ntries--); 
+	}
+	if(!ntries)
+		printf("Erro na disconeccao: TIMEOUT\n");
+	else
+		printf("\n\ndisconnected\n");
+
+}
+
+int esperarTrama(int fd, char a, char c){
+	char buff[255];
+	int res;
+	char trama[5];
+	char rightTrama[5];
+	int indTrama = 0;
     
-        printf("waiting for connection\n");
-        
-        //recepcao de resposta     
-        while ( (indTrama!=5) && (timeout == 0) ){       
-        
-            res = read(fd,buf,1);
-            //printf(":%x:", buf[0]);
-            
-            //verifica se estamos a receber a trama na ordem correcta
-            if(buf[0] == rightTrama[indTrama])
-                    indTrama++;
-            else indTrama = 0;
+	//trama que correcta de resposta do receptor
+	rightTrama[0] = F;
+	rightTrama[1] = a;
+	rightTrama[2] = c;
+	rightTrama[3] = a ^ c;
+	rightTrama[4] = F;
+
+	// instala  funcao que atende interrupcao para timeout
+    	(void) signal(SIGALRM, semResposta);  
+
+	timeout = 0;
+	alarm(3);   //poe o alarm a activar dentro de 3 segundos
+    
+	//printf("waiting for connection\n");
+	
+	//recepcao de resposta     
+	while ( (indTrama!=5) && (timeout == 0) ){       
+	
+	    res = read(fd,buff,1);
+	    //printf(":%x:", buf[0]);
+	    if( res>0)
+	            //verifica se estamos a receber a trama na ordem correcta
+	            if(buff[0] == rightTrama[indTrama])
+	                    indTrama++;
+	            else 
+	                if(buff[0] == rightTrama[0])
+	                        indTrama = 1;
+	                else indTrama = 0;
 
 
        }
+
        if(timeout)
-            ntries--;
-       else
+            return -1;
+       else{
             //cancela o alarm
             signal(SIGALRM,SIG_IGN);
+            return 1;
+       }
+}
+
+void iniCon(int fd){
+    int ntries = 3;
+     
+    while(ntries){
+        enviarTrama(fd,A_EMISSOR,C_SET); //envia pedido de coneccao
+        
+	if(esperarTrama(fd, A_EMISSOR, C_UA)==-1)
+		printf("Timeout: %d\n", ntries--); 
    }
-   if(timeout)
+   if(!ntries)
         printf("Erro na coneccao: TIMEOUT\n");
    else
         printf("\n\nconnected\n");

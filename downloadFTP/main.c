@@ -32,14 +32,34 @@ int getArgs(char* arg);
 
 int main(int argc, char *argv[] ){
 
+	int sock,lsock;
+
 	if( argc >= 2)
-		if(getArgs(argv[1])==-1){
-			printf("%s ftp://[<user>:<password>@]<host>/<url-path>\n", argv[0]);
+		if(getArgs(argv[1])<0){
+			printf("usage: %s ftp://[<user>:<password>@]<host>/<url-path>\n", argv[0]);
 			return 0;
 		}
 
-	printf("parse feito, falta fazer o parse da connecção.\");
+	//init default Con vars
+	Con.porta = 21;
+	Con.lport = 0;
+	printf("struct {\n");
+	printf("	char* ip=%s\n",Con.ip);
+	printf("	char* username=%s\n",Con.username);
+	printf("	char* password=%s\n",Con.password);
+	printf("	int porta=%d\n",Con.porta);
+	printf("	int lport=%d\n",Con.lport);
+	printf("	char* path=%s\n",Con.path);
+	printf(")}Con;\n");
 
+
+	sock = new_con(Con.ip,21);
+
+
+
+	printf("parse feito, falta fazer o parse da connecção.\nsock=%d\n",sock);
+
+	close(sock);
 	return 0;
 
 }
@@ -114,6 +134,7 @@ int getArgs(char* arg){
 
 	char **regex;
 	char **match;
+	char *temp=0;
 	int i = 6;
 	int offset;
 	regex_t re;
@@ -124,13 +145,13 @@ int getArgs(char* arg){
 	int eflag;
 
 
-	regex = calloc(6, sizeof(char*));
-	regex[0] = calloc(8, sizeof(char));
-	regex[1] = calloc(20, sizeof(char));
-	regex[2] = calloc(20, sizeof(char));
-	regex[3] = calloc(95, sizeof(char));
-	regex[4] = calloc(104, sizeof(char));
-	regex[5] = calloc(34, sizeof(char));
+	regex = (char*)calloc(6, sizeof(char*));
+	regex[0] = (char*)calloc(8, sizeof(char));
+	regex[1] = (char*)calloc(20, sizeof(char));
+	regex[2] = (char*)calloc(20, sizeof(char));
+	regex[3] = (char*)calloc(95, sizeof(char));
+	regex[4] = (char*)calloc(104, sizeof(char));
+	regex[5] = (char*)calloc(34, sizeof(char));
 
 	regex[0] = "^ftp://";
 	regex[1] = "/[a-zA-Z0-9]{1,12}:";
@@ -139,13 +160,13 @@ int getArgs(char* arg){
 	regex[4] = "(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])";
 	regex[5] = "(/[a-zA-Z0-9\\-]+)+\\.[a-zA-Z0-9]+$";
 
-	match = calloc(6,sizeof(char*));
-	printf("\nmatch = %d\n",match);
+	match = (char*)calloc(6,sizeof(char*));
+//	printf("\nmatch = %d\n",match);
 
 
-	printf("\n\n\n");
+//	printf("\n\n\n");
 	while(i--){
-		 printf("regex[%d] = %s;\n",5-i,regex[5-i]);
+//		 printf("regex[%d] = %s;\n",5-i,regex[5-i]);
 		 if((status = regcomp( &re, regex[5-i], REG_EXTENDED))!= 0){
 			 regerror(status, &re, buf, 120);
 			 return -1;
@@ -156,9 +177,9 @@ int getArgs(char* arg){
 		 if( status = regexec( &re, ps, 1, pmatch, eflag)== 0){
 			 offset = pmatch[0].rm_eo-pmatch[0].rm_so;
 
-			 match[5-i] = calloc(offset,sizeof(char));
+			 match[5-i] = (char*)calloc(offset,sizeof(char));
 			 strncpy(match[5-i],ps+pmatch[0].rm_so,offset);
-			 printf("encontrado: %s-----%d-%d=%d\n\n",match[5-i], pmatch[0].rm_eo,pmatch[0].rm_so,offset);
+//			 printf("encontrado: %s-----%d-%d=%d\n\n",match[5-i], pmatch[0].rm_eo,pmatch[0].rm_so,offset);
 
 		 }
 
@@ -168,41 +189,47 @@ int getArgs(char* arg){
 
 	if(match[0] != 0) //começa com ftp://?
 		if(match[5]!=0){ //tem path?
-			Con.path = calloc( strlen(match[5]), sizeof(char));
-			strcpy(Con.path, match[5]);
+			Con.path = (char*)calloc( strlen(match[5])-1, sizeof(char));
+			strncpy(Con.path, match[5]+1, strlen(match[5])-1);
 		} else return -1; //não tem! logo não se pode fazer download
 	else return -1; //o arg não está na forma necessaria
 
 	if((match[1]!=0) && (match[2]!=0)){ //tem username e password?
-		Con.username = calloc( strlen(match[1]), sizeof(char));
-		Con.password = calloc( strlen(match[2]), sizeof(char));
-		strcpy(Con.username, match[1]);
-		strcpy(Con.password, match[2]);
+		Con.username = (char*)calloc( strlen(match[1])-2, sizeof(char));
+		Con.password = (char*)calloc( strlen(match[2])-2, sizeof(char));
+		strncpy(Con.username, match[1]+1, strlen(match[1])-2);
+		strncpy(Con.password, match[2]+1, strlen(match[2])-2);
 	} else {
 		Con.username = 0;
 		Con.password = 0;
 	}
 
     if((match[3]!=0) && (match[4]==0)){//tem hostname mas ip não?
-		Con.ip = calloc(4*3+3, sizeof(char));
-		strcpy(Con.ip, getIP(match[3]));
+		Con.ip = (char*)calloc(4*3+3, sizeof(char));
+		temp = (char*)calloc( strlen(match[3]), sizeof(char));
+		strncpy( temp, match[3], strlen(match[3])-1 );
+		//match[4]-> null => uso-o como uma var temp para obter o ip do hostname
+		match[4] = getIP(temp);
+		strncpy(Con.ip, match[4], strlen(match[4]));
 	} else{
-		strcpy(Con.ip, match[4]);
+		Con.ip = (char*)calloc(4*3+3, sizeof(char));
+		strncpy(Con.ip, match[4], strlen(match[4]));
 	}
 
 
-    i=6;
+    i=-1;
 
     //limpar apontadores
-    while(i--){
-    	free(regex[i]);
-    	if(match[i]!=0)
-    		free(match[i]);
-    }
+//    while(i++<6){
+//    	free(regex[i]);
+//    	if(match[i]!=0)
+//    		free(match[i]);
+//    }
 
     free(regex);
     free(match);
-
+    if(temp!=0)
+    	free(temp);
 
 	return 1; //é correcto
 }
