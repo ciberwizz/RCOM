@@ -34,6 +34,7 @@ int main(int argc, char *argv[] ){
 
 	int sock,lsock;
 	char buff[256];
+	char *data;
 
 	if( argc >= 2){
 		if(getArgs(argv[1])<0){
@@ -59,10 +60,76 @@ int main(int argc, char *argv[] ){
 	printf("	char* path=%s\n",Con.path);
 	printf(")}Con;\n");
 
-
 	sock = new_con(Con.ip,21);
 
 	while(recv(sock,buff,255,0)==-1);
+	//<-- 220 FTP for Alf/Tom/Crazy/Pinguim
+	if(strncmp("220",buff,3)!=0){
+ 		printf("ERRO: expected:%s got: %s\n","220",buff);
+ 		return -1;
+ 	}
+
+
+	if(Con.username != NULL){
+		strcpy(tosend[0], "user ");
+		strcat(tosend[0], Con.username);
+		
+		send(sock, tosend[0], strlen(tosend[0]));
+		while(recv(sock,buff,255,0)==-1);
+		//← 331  Please specify the password.
+	 	if(strncmp("331",buff,3)!=0){
+	 		printf("ERRO: expected:%s got: %s\n","331",buff);
+	 		return -1;
+ 		}
+ 		
+ 		strcpy(tosend[1], "pass ");
+		strcat(tosend[1], Con.password);
+		
+		send(sock, tosend[1], strlen(tosend[1]));
+		while(recv(sock,buff,255,0)==-1);
+		//<-- 230 Login successfull.
+	 	if(strncmp("230",buff,3)!=0){
+	 		printf("ERRO: expected:%s got: %s\n","230",buff);
+	 		return -1;
+ 		}
+
+	}
+	
+	send(sock, "pasv",4);
+	while(recv(sock,buff,255,0)==-1);
+	//<-- 227 Entering Passive Mode (192,168,50,138,179,4).
+	if(strncmp("227",buff,3)!=0){
+	 		printf("ERRO: expected:%s got: %s\n","227",buff);
+	 		return -1;
+ 		}
+	//TODO parse do ip + porta
+	//Con.lport = getLPort(buff);
+	lsock = new_con(Con.ip,Con.lport);
+	
+	send(sock, "retr",4);
+	while(recv(sock,buff,255,0)==-1);
+	//← 150 Opening BINARY mode data connection for PATH (XXXX bytes).
+	if(strncmp("150",buff,3)!=0){
+	 		printf("ERRO: expected:%s got: %s\n","150",buff);
+	 		return -1;
+	}
+	
+	//10MB of buffer
+	data = calloc(1024*1024*10,sizeof(char));
+	if(data == 0)
+		return -1;
+	
+	while(recv(lsock,data,1024*1024*10,0)==-1);
+	//send to file
+/*
+
+  226 Transfer complete.
+
+   OU
+
+← 550 Failed to open file.
+
+*/
 
 	printf("parse feito, falta fazer o parse da connecção.\nsock=%d\nreceived=%s\n",sock,buff);
 
