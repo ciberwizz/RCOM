@@ -26,15 +26,15 @@ struct {
 int new_con(char* host, int port);
 char* getIP(char* host);
 int getArgs(char* arg);
-
+int getLPort(char* buff);
 
 
 
 int main(int argc, char *argv[] ){
 
-	int sock,lsock;
-	char buff[256];
-	char *data;
+	int sock,lsock, bytes=-1, bytesTotal = 0, size,i, tamanhoFicheiro;
+	char buff[256], temp[256];
+	char *data, *dataBuff, **tosend;
 
 	if( argc >= 2){
 		if(getArgs(argv[1])<0){
@@ -45,8 +45,10 @@ int main(int argc, char *argv[] ){
 	else {
 		printf("usage: %s ftp://[<user>:<password>@]<host>/<url-path>\n", argv[0]);
 		return 0;
-	
+
 	}
+
+	tosend = (char**)calloc(100, sizeof(char*));
 
 	//init default Con vars
 	Con.porta = 21;
@@ -61,79 +63,172 @@ int main(int argc, char *argv[] ){
 	printf(")}Con;\n");
 
 	sock = new_con(Con.ip,21);
-
-	while(recv(sock,buff,255,0)==-1);
+	bytes = -1;
+	while(bytes == -1)
+		bytes = recv(sock,buff,255,0);
+	buff[bytes] = '\0';
+	printf("A receber -> %s\n", buff);
 	//<-- 220 FTP for Alf/Tom/Crazy/Pinguim
 	if(strncmp("220",buff,3)!=0){
- 		printf("ERRO: expected:%s got: %s\n","220",buff);
- 		return -1;
- 	}
+		printf("ERRO: expected:%s got: %s\n","220",buff);
+		return -1;
+	}
 
-
+	tosend[0] = calloc(256, sizeof(char));
+	tosend[1] = calloc(256, sizeof(char));
 	if(Con.username != NULL){
 		strcpy(tosend[0], "user ");
 		strcat(tosend[0], Con.username);
-		
-		send(sock, tosend[0], strlen(tosend[0]));
-		while(recv(sock,buff,255,0)==-1);
+		strcat(tosend[0], "\n");
+		printf("A enviar -> %s\n", tosend[0]);
+
+		send(sock, tosend[0], strlen(tosend[0]),0);
+		bytes = -1;
+		while(bytes == -1){printf("bytes = %d\n",bytes);
+			bytes = recv(sock,buff,255,0);
+			}
+		buff[bytes] = '\0';
+		printf("A receber -> %s\n", buff);
 		//← 331  Please specify the password.
-	 	if(strncmp("331",buff,3)!=0){
-	 		printf("ERRO: expected:%s got: %s\n","331",buff);
-	 		return -1;
- 		}
- 		
- 		strcpy(tosend[1], "pass ");
+		if(strncmp("331",buff,3)!=0){
+			printf("ERRO: expected:%s got: %s\n","331",buff);
+			return -1;
+		}
+
+		strcpy(tosend[1], "pass ");
 		strcat(tosend[1], Con.password);
-		
-		send(sock, tosend[1], strlen(tosend[1]));
-		while(recv(sock,buff,255,0)==-1);
+		strcat(tosend[1], "\n");
+
+		printf("A enviar -> %s\nCon.password = %s\n", tosend[1],Con.password);
+
+		send(sock, tosend[1], strlen(tosend[1]), 0);
+		bytes = -1;
+		while(bytes == -1)
+			bytes = recv(sock,buff,255,0);
+		buff[bytes] = '\0';
+		printf("A receber -> %s\n", buff);
 		//<-- 230 Login successfull.
-	 	if(strncmp("230",buff,3)!=0){
-	 		printf("ERRO: expected:%s got: %s\n","230",buff);
-	 		return -1;
- 		}
+		if(strncmp("230",buff,3)!=0){
+			printf("ERRO: expected:%s got: %s\n","230",buff);
+			return -1;
+		}
 
 	}
-	
-	send(sock, "pasv",4);
-	while(recv(sock,buff,255,0)==-1);
+
+	//TAMANHO DO FICHEIRO
+	tosend[3] = calloc(256, sizeof(char));
+	strcpy(tosend[3], "size ");
+	strcat(tosend[3], Con.path);
+	strcat(tosend[3], "\n");
+
+	printf("A enviar -> %s\n", tosend[3]);
+
+	send(sock, tosend[3], strlen(tosend[3]), 0);
+	bytes = -1;
+	while(bytes == -1)
+		bytes = recv(sock,buff,255,0);
+	buff[bytes] = '\0';
+	printf("A receber -> %s\n", buff);
+
+	//<-- 213 successfull.
+	if(strncmp("213",buff,3)!=0){
+		printf("ERRO: expected:%s got: %s\n","213",buff);
+		return -1;
+	}
+	i=4;
+	strcpy(temp, buff + i++);
+	tamanhoFicheiro = atoi(temp);
+	printf("TAMANHO (SIZE): %d\n", tamanhoFicheiro);
+
+
+	//PASV
+	printf("A enviar -> %s\n", "pasv");
+
+	send(sock, "pasv\n",5, 0);
+	bytes = -1;
+
+	while(bytes == -1)
+		bytes = recv(sock,buff,255,0);
+	buff[bytes] = '\0';
+	printf("A receber -> %s\n", buff);
 	//<-- 227 Entering Passive Mode (192,168,50,138,179,4).
 	if(strncmp("227",buff,3)!=0){
-	 		printf("ERRO: expected:%s got: %s\n","227",buff);
-	 		return -1;
- 		}
-	//TODO parse do ip + porta
-	//Con.lport = getLPort(buff);
-	lsock = new_con(Con.ip,Con.lport);
-	
-	send(sock, "retr",4);
-	while(recv(sock,buff,255,0)==-1);
-	//← 150 Opening BINARY mode data connection for PATH (XXXX bytes).
-	if(strncmp("150",buff,3)!=0){
-	 		printf("ERRO: expected:%s got: %s\n","150",buff);
-	 		return -1;
+		printf("ERRO: expected:%s got: %s\n","227",buff);
+		return -1;
 	}
-	
+	printf("entrou\n");
+	Con.lport = getLPort(buff);
+	printf("PORT: %d\n", Con.lport);
+
+	lsock = new_con(Con.ip,Con.lport);
+
+
+	tosend[2] = calloc(256, sizeof(char));
+	strcpy(tosend[2], "retr ");
+	strcat(tosend[2], Con.path);
+	strcat(tosend[2], "\n");
+	send(sock, tosend[2], strlen(tosend[2]),0);
+	bytes = -1;
+	while(bytes == -1){printf("bytes = %d\n",bytes);
+		bytes = recv(sock,buff,255,0);
+		}
+	buff[bytes] = '\0';
+	printf("A receber -> %s\n", buff);
+	//	//← 150 Opening BINARY mode data connection for PATH (XXXX bytes).
+	if(strncmp("150",buff,3)!=0){
+		printf("ERRO: expected:%s got: %s\n","150",buff);
+		return -1;
+	}
+
+
+
 	//10MB of buffer
-	data = calloc(1024*1024*10,sizeof(char));
+	data = calloc(tamanhoFicheiro, sizeof(char));
+	dataBuff = calloc(tamanhoFicheiro, sizeof(char));
 	if(data == 0)
 		return -1;
-	
-	while(recv(lsock,data,1024*1024*10,0)==-1);
-	//send to file
-/*
+	i=0;
 
-  226 Transfer complete.
+	do{
+		bytes = -1;
+		while(bytes == -1){
+			bytes = recv(lsock, dataBuff, tamanhoFicheiro, 0);
+			size = bytes;
+			printf("Bytes: %d\n", bytes);
+			if(bytes != -1){
+				bytesTotal += bytes;
+				strncat(data, dataBuff, bytes);
+				data[bytesTotal] = '\0';
+			}
+			i++;
+		}
+		printf("entrou %d vezes\n",i);
+	}while(bytesTotal != tamanhoFicheiro);
 
-   OU
+	i=0;
 
-← 550 Failed to open file.
+	printf("\n\nDADOS(%d bytes):\n",size);
+	while(i<bytesTotal)
+		printf("%c",data[i++]);
 
-*/
 
-	printf("parse feito, falta fazer o parse da connecção.\nsock=%d\nreceived=%s\n",sock,buff);
 
+	printf("\nparse feito, falta fazer o parse da connecção.\i=%d\nreceived=%s\n",i,buff);
+//
 	close(sock);
+	close(lsock);
+
+	//Con.path
+	i = strlen(Con.path);
+	while(i--)
+		if(Con.path[i] == '/')
+			Con.path += i+1;
+
+
+	FILE *file = fopen(Con.path, "w");
+	fprintf(file, data);
+	fclose(file);
+
 	return 0;
 
 }
@@ -154,15 +249,15 @@ int new_con(char* host_ip, int port){
 
 	/*open an TCP socket*/
 	if ((sockfd = socket(AF_INET,SOCK_STREAM,0)) < 0) {
-    		perror("socket()");
-        	return -1;
-    	}
-	/*connect to the server*/
-    if(connect(sockfd,(struct sockaddr *)&server_addr, sizeof(server_addr)) < 0){
-        	perror("connect()");
-        	return -1;
+		perror("socket()");
+		return -1;
 	}
-    	/*send a string to the server*/
+	/*connect to the server*/
+	if(connect(sockfd,(struct sockaddr *)&server_addr, sizeof(server_addr)) < 0){
+		perror("connect()");
+		return -1;
+	}
+	/*send a string to the server*/
 
 
 	return sockfd;
@@ -172,7 +267,7 @@ char* getIP(char* host){
 	struct hostent *h;
 
 
-/*
+	/*
 struct hostent {
 	char    *h_name;		Official name of the host.
 	char    **h_aliases;	A NULL-terminated array of alternate names for the host.
@@ -183,13 +278,13 @@ struct hostent {
 };
 
 #define h_addr h_addr_list[0]	The first address in h_addr_list.
-*/
-        if ((h=gethostbyname(host)) == NULL) {
-            herror("gethostbyname");
-            return NULL;
-        }
+	 */
+	if ((h=gethostbyname(host)) == NULL) {
+		herror("gethostbyname");
+		return NULL;
+	}
 
-        return inet_ntoa(*((struct in_addr *)h->h_addr));
+	return inet_ntoa(*((struct in_addr *)h->h_addr));
 
 }
 
@@ -232,28 +327,28 @@ int getArgs(char* arg){
 	strcpy(regex[5],"(/[a-zA-Z0-9\\-]+)+\\.[a-zA-Z0-9]+$");
 
 	match = (char*)calloc(6,sizeof(char*));
-//	printf("\nmatch = %d\n",match);
+	//	printf("\nmatch = %d\n",match);
 
 
-//	printf("\n\n\n");
+	//	printf("\n\n\n");
 	while(i--){
-		 if((status = regcomp( &re, regex[5-i], REG_EXTENDED))!= 0){
-			 regerror(status, &re, buf, 120);
-			 return -1;
-		 }
-		 ps = arg;
-		 eflag = 0;
-		 
-		 if( status = regexec( &re, ps, 1, pmatch, eflag)== 0){
-			 offset = pmatch[0].rm_eo-pmatch[0].rm_so;
+		if((status = regcomp( &re, regex[5-i], REG_EXTENDED))!= 0){
+			regerror(status, &re, buf, 120);
+			return -1;
+		}
+		ps = arg;
+		eflag = 0;
 
-			 match[5-i] = (char*)calloc(offset,sizeof(char));
-			 strncpy(match[5-i],ps+pmatch[0].rm_so,offset);
-//			 printf("encontrado: %s-----%d-%d=%d\n\n",match[5-i], pmatch[0].rm_eo,pmatch[0].rm_so,offset);
+		if( status = regexec( &re, ps, 1, pmatch, eflag)== 0){
+			offset = pmatch[0].rm_eo-pmatch[0].rm_so;
 
-		 }
+			match[5-i] = (char*)calloc(offset,sizeof(char));
+			strncpy(match[5-i],ps+pmatch[0].rm_so,offset);
+			//			 printf("encontrado: %s-----%d-%d=%d\n\n",match[5-i], pmatch[0].rm_eo,pmatch[0].rm_so,offset);
 
-		 regfree( &re);
+		}
+
+		regfree( &re);
 
 	}
 
@@ -266,7 +361,7 @@ int getArgs(char* arg){
 
 	if((match[1]!=0) && (match[2]!=0)){ //tem username e password?
 		Con.username = (char*)calloc( strlen(match[1])-2, sizeof(char));
-		Con.password = (char*)calloc( strlen(match[2])-2, sizeof(char));
+		Con.password = (char*)calloc( strlen(match[2])-1, sizeof(char));
 		strncpy(Con.username, match[1]+1, strlen(match[1])-2);
 		strncpy(Con.password, match[2]+1, strlen(match[2])-2);
 	} else {
@@ -274,7 +369,7 @@ int getArgs(char* arg){
 		Con.password = 0;
 	}
 
-    if((match[3]!=0) && (match[4]==0)){//tem hostname mas ip não?
+	if((match[3]!=0) && (match[4]==0)){//tem hostname mas ip não?
 		Con.ip = (char*)calloc(4*3+3, sizeof(char));
 		temp = (char*)calloc( strlen(match[3]), sizeof(char));
 		strncpy( temp, match[3], strlen(match[3])-1 );
@@ -288,18 +383,63 @@ int getArgs(char* arg){
 	}
 
 
-    i=6;
-    //limpar apontadores
-    while(--i){
-    	free(regex[i]);
-    	if(match[i]!=0)
-    		free(match[i]);   
-    }
+	i=6;
+	//limpar apontadores
+	while(--i){
+		free(regex[i]);
+		if(match[i]!=0)
+			free(match[i]);
+	}
 
-    free(regex);
-    free(match);
-    if(temp!=0)
-    	free(temp);
+	free(regex);
+	free(match);
+	if(temp!=0)
+		free(temp);
 
 	return 1; //é correcto
+}
+
+int getLPort(char* buff){
+	char regex[] = "([0-9]{1,3})";
+	char** res;
+	int status,i=0, port, offset;
+	char* ps;
+	regex_t re;
+	char buf[256];
+	regmatch_t pmatch[100];
+
+	if((status = regcomp( &re, regex, REG_EXTENDED))!= 0){
+		regerror(status, &re, buf, 120);
+		return -1;
+	}
+	ps = buff;
+	res = (char**) calloc(9,sizeof(char*));
+
+	status=1;
+	printf("ps : %s", ps);
+	while(status!=0){
+		if( status = regexec( &re, ps, 1, pmatch, 0) == 0){
+			//pmatch[0].rm_eo indice de start
+			//pmatch[0].rm_eo indice de end
+			offset = pmatch[0].rm_eo - pmatch[0].rm_so;
+			res[i] = (char*) calloc(offset,sizeof(char));
+			strncpy(res[i], ps+pmatch[0].rm_so, offset);
+
+			printf("res[%d] = %s\n", i, res[i]);
+
+			ps += pmatch[0].rm_eo;
+			printf("ps : %s\n", ps);
+			i++;
+
+		}
+	}
+	printf("res[i-1] : %s\n", res[i-1]);
+	printf("res[i-2] : %s\n", res[i-2]);
+
+	printf("res[i-1] : %d\n", atoi(res[i-1]));
+	printf("res[i-2] : %d\n", atoi(res[i-2]));
+
+	port = atoi(res[i-2])*256 + atoi(res[i-1]);
+
+	return port;
 }
