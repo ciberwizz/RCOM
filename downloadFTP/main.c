@@ -9,6 +9,8 @@
 #include <netdb.h>
 #include <errno.h>
 #include <regex.h>
+#include <string.h>
+
 
 
 struct {
@@ -32,7 +34,7 @@ int getLPort(char* buff);
 
 int main(int argc, char *argv[] ){
 
-	int sock,lsock, bytes=-1, bytesTotal = 0, size,i, tamanhoFicheiro;
+	int sock,lsock, bytes=-1, bytesTotal = 0, size,i, tamanhoFicheiro,j;
 	char buff[256], temp[256];
 	char *data, *dataBuff, **tosend;
 
@@ -182,43 +184,6 @@ int main(int argc, char *argv[] ){
 
 
 
-	//10MB of buffer
-	data = calloc(tamanhoFicheiro, sizeof(char));
-	dataBuff = calloc(tamanhoFicheiro, sizeof(char));
-	if(data == 0)
-		return -1;
-	i=0;
-
-	do{
-		bytes = -1;
-		while(bytes == -1){
-			bytes = recv(lsock, dataBuff, tamanhoFicheiro, 0);
-			size = bytes;
-			printf("Bytes: %d\n", bytes);
-			if(bytes != -1){
-				bytesTotal += bytes;
-				strncat(data, dataBuff, bytes);
-				data[bytesTotal] = '\0';
-			}
-			i++;
-		}
-		printf("entrou %d vezes\n",i);
-	}while(bytesTotal != tamanhoFicheiro);
-
-	i=0;
-
-	printf("\n\nDADOS(%d bytes):\n",size);
-	while(i<bytesTotal)
-		printf("%c",data[i++]);
-
-
-
-	printf("\nparse feito, falta fazer o parse da connecção.\i=%d\nreceived=%s\n",i,buff);
-//
-	close(sock);
-	close(lsock);
-
-	//Con.path
 	i = strlen(Con.path);
 	while(i--)
 		if(Con.path[i] == '/')
@@ -226,7 +191,45 @@ int main(int argc, char *argv[] ){
 
 
 	FILE *file = fopen(Con.path, "w");
-	fprintf(file, data);
+
+
+
+
+
+
+	//buffer com tamanho do ficheiro
+	dataBuff = calloc(tamanhoFicheiro, sizeof(char));
+	if(data == 0)
+		return -1;
+	i=0;
+   
+	do{
+	    j = 0;
+		bytes = -1;
+		while(bytes == -1){
+			bytes = recv(lsock, dataBuff, tamanhoFicheiro, 0);
+			size = bytes;
+			printf("Bytes: %d\n", bytes);
+			if(bytes != -1){
+				bytesTotal += bytes;
+				while(j<bytes)	
+				    fprintf(file,"%c", dataBuff[j++]);
+			}
+			i++;
+		}
+	}while(bytesTotal != tamanhoFicheiro);
+
+	i=0;
+
+
+
+	send(sock, "quit\n",5, 0);
+
+	close(sock);
+	close(lsock);
+
+	//Con.path
+
 	fclose(file);
 
 	return 0;
@@ -311,7 +314,7 @@ int getArgs(char* arg){
 	int eflag;
 
 
-	regex = (char*)calloc(6, sizeof(char*));
+	regex = (char**)calloc(6, sizeof(char*));
 	regex[0] = (char*)calloc(8, sizeof(char));
 	regex[1] = (char*)calloc(20, sizeof(char));
 	regex[2] = (char*)calloc(20, sizeof(char));
@@ -324,9 +327,9 @@ int getArgs(char* arg){
 	strcpy(regex[2],":[a-zA-Z0-9]{1,12}@");
 	strcpy(regex[3],"(([a-zA-Z]|[a-zA-Z][a-zA-Z0-9\\-]*[a-zA-Z0-9])\\.)*([A-Za-z]|[A-Za-z][A-Za-z0-9\\-]*[A-Za-z0-9])/");
 	strcpy(regex[4],"(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])");
-	strcpy(regex[5],"(/[a-zA-Z0-9\\-]+)+\\.[a-zA-Z0-9]+$");
+	strcpy(regex[5],"(/[a-zA-Z0-9_\\-]+)+\\.[a-zA-Z0-9]+$");
 
-	match = (char*)calloc(6,sizeof(char*));
+	match = (char**)calloc(6,sizeof(char*));
 	//	printf("\nmatch = %d\n",match);
 
 
@@ -344,7 +347,6 @@ int getArgs(char* arg){
 
 			match[5-i] = (char*)calloc(offset,sizeof(char));
 			strncpy(match[5-i],ps+pmatch[0].rm_so,offset);
-			//			 printf("encontrado: %s-----%d-%d=%d\n\n",match[5-i], pmatch[0].rm_eo,pmatch[0].rm_so,offset);
 
 		}
 
@@ -425,19 +427,13 @@ int getLPort(char* buff){
 			res[i] = (char*) calloc(offset,sizeof(char));
 			strncpy(res[i], ps+pmatch[0].rm_so, offset);
 
-			printf("res[%d] = %s\n", i, res[i]);
-
 			ps += pmatch[0].rm_eo;
-			printf("ps : %s\n", ps);
+
 			i++;
 
 		}
 	}
-	printf("res[i-1] : %s\n", res[i-1]);
-	printf("res[i-2] : %s\n", res[i-2]);
 
-	printf("res[i-1] : %d\n", atoi(res[i-1]));
-	printf("res[i-2] : %d\n", atoi(res[i-2]));
 
 	port = atoi(res[i-2])*256 + atoi(res[i-1]);
 
